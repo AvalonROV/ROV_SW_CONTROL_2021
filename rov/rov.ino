@@ -1,46 +1,42 @@
 // imports
 ////////////////////////////////////////////////////////////////////////////////
-//#include <Servo.h>
+#include <Servo.h>
+#include <Wire.h>
 
 // pinout
 ////////////////////////////////////////////////////////////////////////////////
 
 // actuators
-#define ACT_1 11
-#define ACT_2 11
-#define ACT_3 8
-#define ACT_4 9
-#define ACT_5 6
-#define ACT_6 7
-
-// thrusters
-#define THRUST_1 9
-#define THRUST_2 9
-#define THRUST_3 9
-#define THRUST_4 9
-#define THRUST_5 9
-#define THRUST_6 9
-#define THRUST_7 9
-#define THRUST_8 9
+#define ACT_0_HS 35
+#define ACT_0_LS 34
+#define ACT_0_EN 9
+#define ACT_1_HS 37
+#define ACT_1_LS 36
+#define ACT_1_EN 8
 
 // sensors
 #define SENSOR_1 A0
 #define SENSOR_2 A2
 #define SENSOR_3 A4
 
+// misc
+#define REDE0 50                    // read enable, data enable for rov -> esc comms link
+
 // parameters
 ////////////////////////////////////////////////////////////////////////////////
-#define BUFFER_SIZE 64
-#define BAUD_RATE 115200
-#define ACTUATOR_QUANTITY 6
-#define THRUSTER_QUANTITY 8
-#define SENSOR_QUANTITY 3
-#define IDENTITY "AVALONROV"
+#define BUFFER_SIZE 64              // maximum number of bytes that can be received at once
+#define ROV_BAUD_RATE 115200        // baud rate of gui -> rov serial comms link
+#define ESC_BAUD_RATE 115200        // baud rate of rov -> esc serial comms link
+#define ACTUATOR_QUANTITY 6         // number of actuators connected to the rov
+#define THRUSTER_QUANTITY 8         // number of thrusters connected to the rov
+#define SENSOR_QUANTITY 3           // number of sensors connected to the rov
+#define IDENTITY "AVALONROV"        // used for the gui to identity which com port to connect to
+#define RWBOUND 0x80                // ???
+#define TIMEOUT 50                  // ???
+#define CAM_SWITCH_ADR 0x03         // i2c address for the camera switcher
 
 // serial commands
 ////////////////////////////////////////////////////////////////////////////////
-
-// rov commands
 const byte IDENTITY_GET = 0;
 const byte ACTUATORS_GET = 1;
 const byte ACTUATORS_SET = 2;
@@ -51,100 +47,77 @@ const byte THRUSTERS_GET = 6;
 const byte THRUSTERS_SET = 7;
 const byte CAMERAS_GET = 8;
 const byte CAMERAS_SET = 9;
-
-// mini rov commands
 const byte MINI_ROV_THRUSTERS_ARM = 10;
 const byte MINI_ROV_THRUSTERS_GET = 11;
 const byte MINI_ROV_THRUSTERS_SET = 12;
 
-// command terminator
-const byte TERMINATOR = 255;
+const byte TERMINATOR = 255;       // terminator for all serial commands
 
-const int actuatorList[ACTUATOR_QUANTITY] = {ACT_1, ACT_2, ACT_3, ACT_4, ACT_5, ACT_6};
-const int thrusterList[THRUSTER_QUANTITY] = {THRUST_1, THRUST_2, THRUST_3, THRUST_4, THRUST_5, THRUST_6, THRUST_7, THRUST_8};
+// store pin allocations
+const int actuatorList[ACTUATOR_QUANTITY][3] = {{ACT_0_HS, ACT_0_LS, ACT_0_EN}, {ACT_1_HS, ACT_1_LS, ACT_1_EN}};
 const int sensorList[SENSOR_QUANTITY] = {SENSOR_1, SENSOR_2, SENSOR_3};
-//const Servo thrusters[THRUSTER_QUANTITY];
 
 void setup() {
-  /*
-    DESCRIPTION
-    - Initiates serial communication interface and sets ups I/O.
+  // initiate gui -> rov serial comms
+  Serial2.begin(ROV_BAUD_RATE);
+  while (!Serial2) {}
 
-    INPUTS
-    None
+  // initiate rov -> esc serial comms
+  Serial3.begin(ESC_BAUD_RATE);
 
-    OUTPUTS
-    None
-  */
-  Serial.begin(BAUD_RATE);
-  while (!Serial) {}
-
-  pinMode(13, OUTPUT);
-
-  // SETUP ACTUATORS PINS
+  // setup actuator pins
   for (int i = 0; i < ACTUATOR_QUANTITY; i++) {
-    pinMode(actuatorList[i], OUTPUT);
-    digitalWrite(actuatorList[i], LOW);
+    pinMode((uint32_t)actuatorList[i], OUTPUT);
+    digitalWrite((uint32_t)actuatorList[i], LOW);
   }
 
-  //SETUP THRUSTER PINS
-  for (int i = 0; i < THRUSTER_QUANTITY; i++) {
-    //thrusters[i].attach(thrusterList[i]);
-    //thrusters[i].writeMicroseconds(1500);
+  // setup sensor pins
+  for (int i = 0; i < SENSOR_QUANTITY; i++) {
+    pinMode(sensorList[i], INPUT);
   }
+
+  pinMode(REDE0, OUTPUT);
+
+  // control camera switching matrix
+  Wire.begin();
+
+  // set default cameras
+  setCameras(4, 3);
 }
 
-// get commands
-////////////////////////////////////////////////////////////////////////////////
-void armThrusters() {
-  /*
-    DESCRIPTION
-    Arms the thruster ESCs by outputting the servo signal for neutral speed.
-
-    INPUTS
-    None
-
-    OUTPUTS
-    None
-  */
-  for (int i = 0; i < THRUSTER_QUANTITY; i++) {
-    //thrusters[i].writeMicroseconds(1500);
-  }
-}
-
-void getThrusters() {
-  /*
-    DESCRIPTION
-    - Reads set speed of each thruster and transmits as a comma seperated ASCII string.
-
-    INPUTS
-    None
-
-    OUTPUTS
-    None
-  */
+void getIdentity () {
+  Serial.print(IDENTITY);
+  Serial.write(TERMINATOR);
 }
 
 void getActuators() {
-  /*
-    DESCRIPTION
-    - Reads state of each actuator digital pin and transmits as a comma seperated ASCII string.
-
-    INPUTS
-    None
-
-    OUTPUTS
-    None
-  */
   for (int i = 0 ; i < ACTUATOR_QUANTITY ; i++) {
-    bool state = digitalRead(actuatorList[i]);
-    Serial.print(state);
-    if (i != SENSOR_QUANTITY - 1)
-      Serial.print(TERMINATOR);
+    bool state = digitalRead((uint32_t)actuatorList[i]);
+    if (state)
+      Serial.write((int8_t)1);
+    else
+      Serial.write((int8_t)1);
   }
 
   // end transmission
-  Serial.println();
+  Serial.write(TERMINATOR);
+}
+
+void setActuators(bool * actuatorStates) {
+  for (int i = 0; i < ACTUATOR_QUANTITY; i++) {
+    if(actuatorStates[i]){
+      digitalWrite(actuatorList[i][0], HIGH); // HS pin
+      digitalWrite(actuatorList[i][1], LOW); // LS pin
+      digitalWrite(actuatorList[i][2], HIGH); // EN pin
+    }
+    else{
+      digitalWrite(actuatorList[i][0], LOW); // HS pin
+      digitalWrite(actuatorList[i][1], LOW); // LS pin
+      digitalWrite(actuatorList[i][2], HIGH); // EN pin
+    }
+  }
+  // end transmission
+  Serial.write(TERMINATOR);
 }
 
 void getSensors() {
@@ -167,56 +140,33 @@ void getSensors() {
   Serial.write(TERMINATOR);
 }
 
-// set commands
-////////////////////////////////////////////////////////////////////////////////
-void setThrusters(int *thrusterSpeeds) {
-  /*
-     DESCRIPTION
-     - Sets the PWM for each thruster pin.
+void armThrusters() {
+}
 
-     INPUTS
-     - thrusterSpeeds (int array) = Pointer to the array that stores the processed thruster speeds (0-1023).
+void getThrusters() {
+}
 
-     OUTPUTS
-     None
-  */
+void setThrusters(int8_t * thrusterSpeeds) {
+  int sendSpeed[THRUSTER_QUANTITY], error;
   for (int i = 0; i < THRUSTER_QUANTITY; i++) {
-    //thrusters[i].writeMicroseconds(map(thrusterSpeeds[i], 1, 999, 1100, 1900));
+    if (thrusterSpeeds[i] > 100) thrusterSpeeds[i] = 100; else if (thrusterSpeeds[i] < -100) thrusterSpeeds[i] = -100;
+    //sendSpeed[i] = (int)map(thrusterSpeeds[i], -100, 100, -9000, 9000);
+    error = sendEscCommand(Serial3, 0x02, i + 2, (uint8_t*)&thrusterSpeeds[i]);
   }
   // end transmission
-  Serial.write(TERMINATOR);
+  Serial2.write(TERMINATOR);
 }
 
-void setActuators(bool * actuatorStates) {
-  /*
-     DESCRIPTION
-     Sets the actuator pins HIGH or LOW.
-
-     INPUTS
-     actuatorStates (bool array) = Name of the array that stores the processed actuator states (true/false).
-
-     OUTPUTS
-     None
-  */
-  for (int i = 0; i < ACTUATOR_QUANTITY; i++) {
-    digitalWrite(actuatorList[i], actuatorStates[i]);
-  }
-  // end transmission
-  Serial.write(TERMINATOR);
-}
-
-void setCameras() {
-  /*
-    DESCRIPTION
-    - Sets which analogue cameras are to be sent up the tether.
-
-    INPUTS
-    None
-
-    OUTPUTS
-    None
-  */
-
+void setCameras(int camera_1, int camera_2) {
+  Wire.beginTransmission(CAM_SWITCH_ADR);
+  Wire.write(0b01); //output 1 register
+  Wire.write(224 + camera_1); //add 64 to alter gain1 and 32 to alter gain2
+  Wire.endTransmission();
+  delay(1);
+  Wire.beginTransmission(CAM_SWITCH_ADR);
+  Wire.write(0b10); //output 1 register
+  Wire.write(224 + camera_2); //add 64 to alter gain1 and 32 to alter gain2
+  Wire.endTransmission();
 }
 
 // data processing
@@ -239,56 +189,31 @@ void rovControlAlgorithm(byte * rovControlValues) {
   ////////////////////////////////////////////////////////////////////////////////
   //////////////////////// WRITE KINEMATIC EQUATIONS HERE ////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
-  if (rovControlValues[0] > 50)
-    digitalWrite(13, HIGH);
-  else
-    digitalWrite(13, LOW);
+  int8_t thrusterSpeeds[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  
+  int i = 0, rovControl2[6];
+  for(i = 0; i < 6; i++){
+    rovControl2[i] = rovControlValues[i*2] - rovControlValues[i*2+1];
+  }
+  thrusterSpeeds[0] = -(+(int8_t)rovControl2[0] - (int8_t)rovControl2[1] - (int8_t)rovControl2[4]);
+  thrusterSpeeds[1] = -(int8_t)rovControl2[0] - (int8_t)rovControl2[1] + (int8_t)rovControl2[4];
+  thrusterSpeeds[2] = -(-(int8_t)rovControl2[0] + (int8_t)rovControl2[1] - (int8_t)rovControl2[4]);
+  thrusterSpeeds[3] = +(int8_t)rovControl2[0] + (int8_t)rovControl2[1] + (int8_t)rovControl2[4];
 
-  int thrusterSpeeds[8] = {500, 500, 500, 500, 500, 500, 500, 500};
+  thrusterSpeeds[4] = +(int8_t)rovControl2[5] + (int8_t)rovControl2[2];
+  thrusterSpeeds[5] = +(int8_t)rovControl2[5] - (int8_t)rovControl2[2];
+
   setThrusters(thrusterSpeeds);
 }
 
-int charArrayToInt(const char *data, size_t start, size_t finish) {
-  /*
-    DESCRIPTION
-    - Converts a specific region of a char array into an integer.
-    - For example, it could return 56 from ['2','5','6','1'].
-
-    INPUTS
-    - data (char array) = Pointer to the char array where the data is stored.
-    - start (int) = The index of the first desired character in the array.
-    - finish (int) = The index of the last desired character in the array.
-
-    OUTPUTS
-    - val (int) = The integer value from the char array
-  */
-  int val = 0;
-  while (start < finish) {
-    val = val * 10 + data[start++] - '0';
-  }
-  return val;
-}
-
 bool getSerialCommand(int bufferSize, char *receivedData) {
-  /*
-    DESCRIPTION
-    - Receives bytes of data over serial and stores them in an array
-
-    INPUTS
-    - bufferSize (int) = Maximum number of characters to be stored in the received data array.
-    - receivedData (char array) = Name of the array to stores the received data in.
-
-    OUTPUTS
-    - readStatus (bool) = True if a command has been recieved, False otherwise.
-  */
   bool readStatus;
   int index = 0;
-
-  if (Serial.available() > 0)
+  if (Serial2.available() > 0)
   {
     // read incoming bytes and store in buffer array
-    int len = Serial.readBytesUntil(255, receivedData, bufferSize);
-    //while(Serial.available()>0){Serial.read(); Serial.flush();}
+    int len = Serial2.readBytesUntil(TERMINATOR, receivedData, bufferSize);
+
     if (len > 0)
       readStatus = true;
     else
@@ -301,29 +226,31 @@ bool getSerialCommand(int bufferSize, char *receivedData) {
   return (readStatus);
 }
 
+int8_t sendEscCommand(HardwareSerial &port, uint8_t cmd, uint8_t addr, uint8_t* data) {
+  char tempArray[16];
+  //SerialUSB.println("FUCK");
+  digitalWrite(REDE0, HIGH);
+  port.write(125);
+  port.write(addr);
+  port.write(126);
+  port.write(*data);
+  //port.print(tempArray);
+  //digitalWrite(REDE0, LOW);
+  //SerialUSB.println(*(int8_t*)data);
+}
+
 void writeIntToBinary(unsigned int value) {
-  Serial.write(lowByte(value));
-  Serial.write(highByte(value));
+  Serial2.write(lowByte(value));
+  Serial2.write(highByte(value));
 }
 
 void processCommand(char *receivedData) {
-  /*
-    DESCRIPTION
-    - Breaks down the received command to determine the required action, and calls the neccessary function.
-
-    INPUTS
-    - receivedData (char array) = Name of the array that contains the received data.
-
-    OUTPUTS
-    None
-  */
   // decode command
   switch (receivedData[0])
   {
     case IDENTITY_GET:
       {
-        Serial.print(IDENTITY);
-        Serial.write(TERMINATOR);
+        getIdentity();
         break;
       }
 
@@ -363,12 +290,11 @@ void processCommand(char *receivedData) {
   }
 }
 
-void loop()
-{
+void loop() {
   // array to store receieved data in
   char receivedData[BUFFER_SIZE];
 
-  // add recieved data to array
+  // add received data to array
   bool readStatus = getSerialCommand(BUFFER_SIZE, receivedData);
 
   // process recieved data

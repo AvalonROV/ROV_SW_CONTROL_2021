@@ -158,7 +158,7 @@ void getSensors() {
     None
   */
   for (int i = 0 ; i < SENSOR_QUANTITY ; i++) {
-    unsigned int reading = analogRead(sensorList[i]);
+    uint8_t reading = analogRead(sensorList[i]);
     writeIntToBinary(reading);
     
   }
