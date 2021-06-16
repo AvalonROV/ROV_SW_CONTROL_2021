@@ -57,7 +57,6 @@ const byte MINI_ROV_THRUSTERS_ARM = 10;
 const byte MINI_ROV_THRUSTERS_GET = 11;
 const byte MINI_ROV_THRUSTERS_SET = 12;
 
-// command terminator
 const byte TERMINATOR = 255;
 
 const int actuatorList[ACTUATOR_QUANTITY] = {ACT_1, ACT_2, ACT_3, ACT_4, ACT_5, ACT_6};
@@ -161,7 +160,7 @@ void getSensors() {
   for (int i = 0 ; i < SENSOR_QUANTITY ; i++) {
     unsigned int reading = analogRead(sensorList[i]);
     writeIntToBinary(reading);
-
+    
   }
   // end transmission
   Serial.write(TERMINATOR);
@@ -239,7 +238,7 @@ void rovControlAlgorithm(byte * rovControlValues) {
   ////////////////////////////////////////////////////////////////////////////////
   //////////////////////// WRITE KINEMATIC EQUATIONS HERE ////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
-  if (rovControlValues[0] > 50)
+  if(rovControlValues[0] > 50)
     digitalWrite(13, HIGH);
   else
     digitalWrite(13, LOW);
@@ -309,7 +308,7 @@ void writeIntToBinary(unsigned int value) {
 void processCommand(char *receivedData) {
   /*
     DESCRIPTION
-    - Breaks down the received command to determine the required action, and calls the neccessary function.
+    - Breaks down an ASCII string command to determine the required action, and called the neccessary function.
 
     INPUTS
     - receivedData (char array) = Name of the array that contains the received data.
