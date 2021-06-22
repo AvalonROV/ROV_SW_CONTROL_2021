@@ -157,11 +157,12 @@ void getSensors() {
     OUTPUTS
     None
   */
-  for (int i = 0 ; i < SENSOR_QUANTITY ; i++) {
-    uint8_t reading = analogRead(sensorList[i]);
-    writeIntToBinary(reading);
-    
-  }
+//  for (int i = 0 ; i < SENSOR_QUANTITY ; i++) {
+//    uint8_t reading = analogRead(sensorList[i]);
+//    writeIntToBinary(reading); 
+//  }
+
+  Serial.write(100);
   // end transmission
   Serial.write(TERMINATOR);
 }
@@ -205,17 +206,7 @@ void setActuators(bool * actuatorStates) {
 }
 
 void setCameras() {
-  /*
-    DESCRIPTION
-    - Sets which analogue cameras are to be sent up the tether.
-
-    INPUTS
-    None
-
-    OUTPUTS
-    None
-  */
-
+  
 }
 
 // data processing
@@ -359,6 +350,11 @@ void processCommand(char *receivedData) {
         }
         rovControlAlgorithm(rovControlValues);
       }
+
+    case CAMERAS_SET:
+    {
+      
+    }
   }
 }
 

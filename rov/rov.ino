@@ -24,7 +24,7 @@
 
 // parameters
 ////////////////////////////////////////////////////////////////////////////////
-#define BUFFER_SIZE 64              // maximum number of bytes that can be received at once
+#define BUFFER_SIZE 10              // maximum number of bytes that can be received at once
 #define ROV_BAUD_RATE 115200        // baud rate of gui -> rov serial comms link
 #define ESC_BAUD_RATE 115200        // baud rate of rov -> esc serial comms link
 #define ACTUATOR_QUANTITY 6         // number of actuators connected to the rov
@@ -34,6 +34,10 @@
 #define RWBOUND 0x80                // ???
 #define TIMEOUT 50                  // ???
 #define CAM_SWITCH_ADR 0x03         // i2c address for the camera switcher
+#define TETHER_SERIAL Serial2       // serial object for gui -> rov serial comms link
+//#define TETHER_SERIAL SerialUSB     // serial object for gui -> rov serial comms link (Arduino Due testing)
+#define ESC_SERIAL Serial3          // serial object for rov -> esc serial comms link
+#define DEBUG_SERIAL Serial         // serial object for printing to terminal (debugging)
 
 // serial commands
 ////////////////////////////////////////////////////////////////////////////////
@@ -59,16 +63,24 @@ const int sensorList[SENSOR_QUANTITY] = {SENSOR_1, SENSOR_2, SENSOR_3};
 
 void setup() {
   // initiate gui -> rov serial comms
-  Serial2.begin(ROV_BAUD_RATE);
-  while (!Serial2) {}
+  TETHER_SERIAL.begin(ROV_BAUD_RATE);
+  while (!TETHER_SERIAL) {}
+
+  // debugging via programming port
+  DEBUG_SERIAL.begin(115200);
+  while (!DEBUG_SERIAL) {}
 
   // initiate rov -> esc serial comms
-  Serial3.begin(ESC_BAUD_RATE);
+  ESC_SERIAL.begin(ESC_BAUD_RATE);
 
   // setup actuator pins
   for (int i = 0; i < ACTUATOR_QUANTITY; i++) {
-    pinMode((uint32_t)actuatorList[i], OUTPUT);
-    digitalWrite((uint32_t)actuatorList[i], LOW);
+    pinMode(actuatorList[i][0], OUTPUT);
+    pinMode(actuatorList[i][1], OUTPUT);
+    pinMode(actuatorList[i][2], OUTPUT);
+    digitalWrite(actuatorList[i][0], LOW);
+    digitalWrite(actuatorList[i][1], LOW);
+    digitalWrite(actuatorList[i][2], LOW);
   }
 
   // setup sensor pins
@@ -76,74 +88,46 @@ void setup() {
     pinMode(sensorList[i], INPUT);
   }
 
-  pinMode(REDE0, OUTPUT);
-
-  // control camera switching matrix
-  Wire.begin();
-
-  // set default cameras
-  setCameras(4, 3);
+    pinMode(REDE0, OUTPUT);
+  
+  //  // control camera switching matrix
+  //  Wire.begin();
+  //
+  //  // set default cameras
+  //  setCameras(4, 3);
 }
 
 void getIdentity () {
-  Serial.print(IDENTITY);
-  Serial.write(TERMINATOR);
-}
-
-void getActuators() {
-  for (int i = 0 ; i < ACTUATOR_QUANTITY ; i++) {
-    bool state = digitalRead((uint32_t)actuatorList[i]);
-    if (state)
-      Serial.write((int8_t)1);
-    else
-      Serial.write((int8_t)1);
-  }
-
-  // end transmission
-  Serial.write(TERMINATOR);
+  DEBUG_SERIAL.println("SENDING IDENTITY");
+  TETHER_SERIAL.print(IDENTITY);
+  TETHER_SERIAL.write(TERMINATOR);
 }
 
 void setActuators(bool * actuatorStates) {
-  for (int i = 0; i < ACTUATOR_QUANTITY; i++) {
-    if(actuatorStates[i]){
+  for (uint8_t i = 0; i < ACTUATOR_QUANTITY; i++) {
+    if (actuatorStates[i]) {
       digitalWrite(actuatorList[i][0], HIGH); // HS pin
       digitalWrite(actuatorList[i][1], LOW); // LS pin
       digitalWrite(actuatorList[i][2], HIGH); // EN pin
     }
-    else{
+    else {
       digitalWrite(actuatorList[i][0], LOW); // HS pin
       digitalWrite(actuatorList[i][1], LOW); // LS pin
       digitalWrite(actuatorList[i][2], HIGH); // EN pin
     }
   }
   // end transmission
-  Serial.write(TERMINATOR);
+  TETHER_SERIAL.write(TERMINATOR);
 }
 
 void getSensors() {
-  /*
-    DESCRIPTION
-    - Reads all sensors values over I2C and transmits as a comma seperated ASCII string.
-
-    INPUTS
-    None
-
-    OUTPUTS
-    None
-  */
   for (int i = 0 ; i < SENSOR_QUANTITY ; i++) {
-    unsigned int reading = analogRead(sensorList[i]);
+    uint8_t reading = analogRead(sensorList[i]);
     writeIntToBinary(reading);
-
   }
+
   // end transmission
-  Serial.write(TERMINATOR);
-}
-
-void armThrusters() {
-}
-
-void getThrusters() {
+  TETHER_SERIAL.write(TERMINATOR);
 }
 
 void setThrusters(int8_t * thrusterSpeeds) {
@@ -151,22 +135,26 @@ void setThrusters(int8_t * thrusterSpeeds) {
   for (int i = 0; i < THRUSTER_QUANTITY; i++) {
     if (thrusterSpeeds[i] > 100) thrusterSpeeds[i] = 100; else if (thrusterSpeeds[i] < -100) thrusterSpeeds[i] = -100;
     //sendSpeed[i] = (int)map(thrusterSpeeds[i], -100, 100, -9000, 9000);
-    error = sendEscCommand(Serial3, 0x02, i + 2, (uint8_t*)&thrusterSpeeds[i]);
+    error = sendEscCommand(ESC_SERIAL, 0x02, i + 2, (uint8_t*)&thrusterSpeeds[i]);
   }
+  
   // end transmission
-  Serial2.write(TERMINATOR);
+  TETHER_SERIAL.write(TERMINATOR);
 }
 
 void setCameras(int camera_1, int camera_2) {
-  Wire.beginTransmission(CAM_SWITCH_ADR);
-  Wire.write(0b01); //output 1 register
-  Wire.write(224 + camera_1); //add 64 to alter gain1 and 32 to alter gain2
-  Wire.endTransmission();
-  delay(1);
-  Wire.beginTransmission(CAM_SWITCH_ADR);
-  Wire.write(0b10); //output 1 register
-  Wire.write(224 + camera_2); //add 64 to alter gain1 and 32 to alter gain2
-  Wire.endTransmission();
+  //  Wire.beginTransmission(CAM_SWITCH_ADR);
+  //  Wire.write(0b01); //output 1 register
+  //  Wire.write(224 + camera_1); //add 64 to alter gain1 and 32 to alter gain2
+  //  Wire.endTransmission();
+  //  delay(1);
+  //  Wire.beginTransmission(CAM_SWITCH_ADR);
+  //  Wire.write(0b10); //output 1 register
+  //  Wire.write(224 + camera_2); //add 64 to alter gain1 and 32 to alter gain2
+  //  Wire.endTransmission();
+
+  // end transmission
+  TETHER_SERIAL.write(TERMINATOR);
 }
 
 // data processing
@@ -190,10 +178,10 @@ void rovControlAlgorithm(byte * rovControlValues) {
   //////////////////////// WRITE KINEMATIC EQUATIONS HERE ////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
   int8_t thrusterSpeeds[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  
+
   int i = 0, rovControl2[6];
-  for(i = 0; i < 6; i++){
-    rovControl2[i] = rovControlValues[i*2] - rovControlValues[i*2+1];
+  for (i = 0; i < 6; i++) {
+    rovControl2[i] = rovControlValues[i * 2] - rovControlValues[i * 2 + 1];
   }
   thrusterSpeeds[0] = -(+(int8_t)rovControl2[0] - (int8_t)rovControl2[1] - (int8_t)rovControl2[4]);
   thrusterSpeeds[1] = -(int8_t)rovControl2[0] - (int8_t)rovControl2[1] + (int8_t)rovControl2[4];
@@ -206,13 +194,14 @@ void rovControlAlgorithm(byte * rovControlValues) {
   setThrusters(thrusterSpeeds);
 }
 
-bool getSerialCommand(int bufferSize, char *receivedData) {
+bool getSerialCommand(int bufferSize, byte *receivedData) {
   bool readStatus;
   int index = 0;
-  if (Serial2.available() > 0)
+  if (TETHER_SERIAL.available() > 0)
   {
     // read incoming bytes and store in buffer array
-    int len = Serial2.readBytesUntil(TERMINATOR, receivedData, bufferSize);
+
+    int len = TETHER_SERIAL.readBytesUntil(TERMINATOR, receivedData, bufferSize);
 
     if (len > 0)
       readStatus = true;
@@ -239,12 +228,12 @@ int8_t sendEscCommand(HardwareSerial &port, uint8_t cmd, uint8_t addr, uint8_t* 
   //SerialUSB.println(*(int8_t*)data);
 }
 
-void writeIntToBinary(unsigned int value) {
-  Serial2.write(lowByte(value));
-  Serial2.write(highByte(value));
+void writeIntToBinary(uint8_t value) {
+  TETHER_SERIAL.write(lowByte(value));
+  TETHER_SERIAL.write(highByte(value));
 }
 
-void processCommand(char *receivedData) {
+void processCommand(byte *receivedData) {
   // decode command
   switch (receivedData[0])
   {
@@ -276,6 +265,7 @@ void processCommand(char *receivedData) {
     case SENSORS_GET:
       {
         getSensors();
+        break;
       }
 
     case THRUSTERS_SET:
@@ -287,12 +277,20 @@ void processCommand(char *receivedData) {
         }
         rovControlAlgorithm(rovControlValues);
       }
+
+    case CAMERAS_SET:
+      {
+        uint8_t camera1 = receivedData[1];
+        uint8_t camera2 = receivedData[2];
+        setCameras(camera1, camera2);
+        break;
+      }
   }
 }
 
 void loop() {
   // array to store receieved data in
-  char receivedData[BUFFER_SIZE];
+  byte receivedData[BUFFER_SIZE];
 
   // add received data to array
   bool readStatus = getSerialCommand(BUFFER_SIZE, receivedData);
